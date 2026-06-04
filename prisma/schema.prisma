@@ -1,0 +1,298 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Rol {
+  admin
+  docente
+  alumno
+  staff
+}
+
+enum Estado {
+  activo
+  inactivo
+}
+
+enum EstadoSolicitud {
+  pendiente
+  aprobada
+  rechazada
+  cancelada
+}
+
+enum TipoSolicitud {
+  normal
+  especial
+}
+
+// ------------------------------------------------------------
+// 1. USUARIOS
+// ------------------------------------------------------------
+model Usuario {
+  id_usuario      Int      @id @default(autoincrement())
+  nombre_completo String   @db.VarChar(150)
+  matricula       String   @unique @db.VarChar(50)
+  contrasena      String   @db.VarChar(255)
+  rol             Rol      @default(alumno)
+  estado          Estado   @default(activo)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Auto-referencia: quién creó este usuario
+  id_user_creator Int?
+  creador         Usuario?  @relation("UsuarioCreador", fields: [id_user_creator], references: [id_usuario])
+  usuariosCreados Usuario[] @relation("UsuarioCreador")
+
+  // Relaciones
+  solicitudes             Solicitud[]             @relation("SolicitanteAula")
+  solicitudesInmobiliario SolicitudInmobiliario[] @relation("SolicitanteInmobiliario")
+  reportes                Reporte[]               @relation("ReportanteReporte")
+
+  @@map("usuarios")
+}
+
+// ------------------------------------------------------------
+// 2. EDIFICIO
+// ------------------------------------------------------------
+model Edificio {
+  id_edificio  Int      @id @default(autoincrement())
+  nombre_clave String   @db.VarChar(100)
+  estado       Estado   @default(activo)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  aulas Aula[]
+
+  @@map("edificios")
+}
+
+// ------------------------------------------------------------
+// 3. AULA
+// ------------------------------------------------------------
+model Aula {
+  id_aula      Int      @id @default(autoincrement())
+  nombre_clave String   @db.VarChar(100)
+  estado       Estado   @default(activo)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  id_edificio Int
+  edificio    Edificio @relation(fields: [id_edificio], references: [id_edificio])
+
+  solicitudes    Solicitud[]             @relation("AulaSolicitud")
+  reportes       Reporte[]               @relation("AulaReporte")
+  mantenimientos BitacoraMantenimiento[] @relation("AulaMantenimiento")
+  inventarioBase AulaHasMobiliarioInfraestructura[]
+
+  @@map("aulas")
+}
+
+// ------------------------------------------------------------
+// 4. MOBILIARIO
+// ------------------------------------------------------------
+model CatalogoInmobiliario {
+  id_inmobiliario  Int      @id @default(autoincrement())
+  categoria        String   @db.VarChar(100)
+  nombre           String   @db.VarChar(150)
+  modelo           String?  @db.VarChar(150)
+  num_de_serie     String?  @unique @db.VarChar(100)
+  stock_disponible Int      @default(0)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  solicitudesInmobiliario SolicitudInmobiliario[]       @relation("InmobiliarioSolicitud")
+  reportes                Reporte[]                     @relation("InmobiliarioReporte")
+  mantenimientos          BitacoraMantenimiento[]       @relation("InmobiliarioMantenimiento")
+  aulasAsignadas          AulaHasMobiliarioInfraestructura[]
+
+  @@map("mobiliario")
+}
+
+// ------------------------------------------------------------
+// 5. PERIODOS (Ciclos Escolares / Semestres)
+// ------------------------------------------------------------
+model Periodo {
+  id_periodo   Int      @id @default(autoincrement())
+  nombre_clave String   @db.VarChar(100)
+  fecha_inicio DateTime
+  fecha_final  DateTime
+  estado       Estado   @default(activo)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // Agrupación de todas las entidades temporales
+  solicitudes             Solicitud[]
+  solicitudesInmobiliario SolicitudInmobiliario[]
+  reportes                Reporte[]
+  mantenimientos          BitacoraMantenimiento[]
+
+  @@map("periodos")
+}
+
+// ------------------------------------------------------------
+// 6. ACTIVIDAD (Propósito de la solicitud)
+// ------------------------------------------------------------
+model Actividad {
+  id_actividad        Int      @id @default(autoincrement())
+  titulo_actividad    String   @db.VarChar(150)
+  subtitulo_actividad String?  @db.VarChar(150)
+  descripcion         String?  @db.Text
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  solicitudes Solicitud[]
+
+  @@map("actividades")
+}
+
+// ------------------------------------------------------------
+// 7. SOLICITUD
+// ------------------------------------------------------------
+model Solicitud {
+  id_solicitud   Int             @id @default(autoincrement())
+  tipo_solicitud TipoSolicitud   @default(normal)
+  fecha_inicio   DateTime
+  fecha_final    DateTime
+  motivo         String?         @db.Text
+  estado         EstadoSolicitud @default(pendiente)
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  // Relaciones
+  id_user_solicitante Int
+  solicitante         Usuario @relation("SolicitanteAula", fields: [id_user_solicitante], references: [id_usuario])
+
+  id_aula Int
+  aula    Aula @relation("AulaSolicitud", fields: [id_aula], references: [id_aula])
+
+  id_periodo Int
+  periodo    Periodo @relation(fields: [id_periodo], references: [id_periodo])
+
+  id_actividad Int?
+  actividad    Actividad? @relation(fields: [id_actividad], references: [id_actividad])
+
+  solicitudesInmobiliarioVinculadas SolicitudHasSolicitudInmobiliario[]
+
+  @@map("solicitudes")
+}
+
+// ------------------------------------------------------------
+// 8. SOLICITUD_INMOBILIARIO
+// ------------------------------------------------------------
+model SolicitudInmobiliario {
+  id_solicitud_inmobiliario Int             @id @default(autoincrement())
+  cantidad_solicitada       Int             @default(1)
+  estado                    EstadoSolicitud @default(pendiente)
+  fecha_inicio              DateTime
+  fecha_fin                 DateTime
+  createdAt                 DateTime        @default(now()) @map("created_at")
+  updatedAt                 DateTime        @updatedAt @map("updated_at")
+
+  // Relaciones
+  id_user_solicitante Int
+  solicitante         Usuario @relation("SolicitanteInmobiliario", fields: [id_user_solicitante], references: [id_usuario])
+
+  id_inmobiliario_solicitado Int
+  inmobiliario               CatalogoInmobiliario @relation("InmobiliarioSolicitud", fields: [id_inmobiliario_solicitado], references: [id_inmobiliario])
+
+  id_periodo Int
+  periodo    Periodo @relation(fields: [id_periodo], references: [id_periodo])
+
+  solicitudesAulaVinculadas SolicitudHasSolicitudInmobiliario[]
+
+  @@map("solicitudes_inmobiliario")
+}
+
+// ------------------------------------------------------------
+// 9. SOLICITUD_HAS_SOLICITUD_INMOBILIARIO (Pivote N:M)
+// ------------------------------------------------------------
+model SolicitudHasSolicitudInmobiliario {
+  id                        Int @id @default(autoincrement()) @map("id_solicitud_has_solicitud_inmobiliario")
+  id_solicitud              Int
+  id_solicitud_inmobiliario Int
+
+  solicitud             Solicitud             @relation(fields: [id_solicitud], references: [id_solicitud], onDelete: Cascade)
+  solicitudInmobiliario SolicitudInmobiliario @relation(fields: [id_solicitud_inmobiliario], references: [id_solicitud_inmobiliario], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([id_solicitud, id_solicitud_inmobiliario])
+  @@map("solicitud_has_solicitud_inmobiliario")
+}
+
+// ------------------------------------------------------------
+// 10. AULA_HAS_MOBILIARIO_INFRAESTRUCTURA (Inventario Base)
+// ------------------------------------------------------------
+model AulaHasMobiliarioInfraestructura {
+  id_aula_has_mobiliario_infraestructura Int @id @default(autoincrement())
+  id_aula                                Int
+  id_mobiliario                          Int
+  cantidad_en_aula                       Int @default(0)
+  
+  aula       Aula                 @relation(fields: [id_aula], references: [id_aula], onDelete: Cascade)
+  mobiliario CatalogoInmobiliario @relation(fields: [id_mobiliario], references: [id_inmobiliario])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([id_aula, id_mobiliario])
+  @@map("aula_has_mobiliario_infraestructura")
+}
+
+// ------------------------------------------------------------
+// 11. REPORTES
+// ------------------------------------------------------------
+model Reporte {
+  id_reporte  Int      @id @default(autoincrement())
+  titulo      String   @db.VarChar(200)
+  descripcion String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relaciones
+  id_user_reportante Int
+  reportante         Usuario @relation("ReportanteReporte", fields: [id_user_reportante], references: [id_usuario])
+
+  id_aula Int
+  aula    Aula @relation("AulaReporte", fields: [id_aula], references: [id_aula])
+
+  id_mobiliario_afectado Int?
+  mobiliario             CatalogoInmobiliario? @relation("InmobiliarioReporte", fields: [id_mobiliario_afectado], references: [id_inmobiliario])
+
+  id_periodo Int
+  periodo    Periodo @relation(fields: [id_periodo], references: [id_periodo])
+
+  @@map("reportes")
+}
+
+// ------------------------------------------------------------
+// 12. BITACORA_MANTENIMIENTO 
+// ------------------------------------------------------------
+model BitacoraMantenimiento {
+  id_bitacora_mantenimiento Int      @id @default(autoincrement())
+  fecha_inicio              DateTime
+  fecha_final               DateTime?
+  accion_realizada          String   @db.VarChar(200)
+  descripcion               String?  @db.Text
+  realizado_por             String?  @db.VarChar(150)
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  // Relaciones
+  id_mobiliario Int
+  mobiliario    CatalogoInmobiliario @relation("InmobiliarioMantenimiento", fields: [id_mobiliario], references: [id_inmobiliario])
+
+  id_aula Int
+  aula    Aula @relation("AulaMantenimiento", fields: [id_aula], references: [id_aula])
+
+  id_periodo Int
+  periodo    Periodo @relation(fields: [id_periodo], references: [id_periodo])
+
+  @@map("bitacora_mantenimiento")
+}
